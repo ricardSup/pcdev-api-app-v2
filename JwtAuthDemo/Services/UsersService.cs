@@ -1,4 +1,7 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
+using JwtAuthDemo.DataAccess;
+using JwtAuthDemo.Models;
 using Microsoft.Extensions.Logging;
 
 namespace JwtAuthDemo.Services
@@ -13,7 +16,7 @@ namespace JwtAuthDemo.Services
     public class UserService : IUserService
     {
         private readonly ILogger<UserService> _logger;
-
+        private readonly PostgreSqlContext _context;
 
         private readonly IDictionary<string, string> _users = new Dictionary<string, string>
         {
@@ -22,9 +25,10 @@ namespace JwtAuthDemo.Services
             { "admin", "securePassword" }
         };
         // inject your database here for user validation
-        public UserService(ILogger<UserService> logger)
+        public UserService(ILogger<UserService> logger, PostgreSqlContext context)
         {
             _logger = logger;
+            this._context = context;
         }
 
         public bool IsValidUserCredentials(string userName, string password)
@@ -45,7 +49,16 @@ namespace JwtAuthDemo.Services
 
         public bool IsAnExistingUser(string userName)
         {
-            return _users.ContainsKey(userName);
+            //return _users.ContainsKey(userName);
+            User user = _context.Users.FirstOrDefault(t => t.UserName == userName);
+            if (user == null)
+            {
+                return false;
+            }
+            else
+            {
+                return true;
+            }
         }
 
         public string GetUserRole(string userName)
@@ -55,12 +68,26 @@ namespace JwtAuthDemo.Services
                 return string.Empty;
             }
 
-            if (userName == "admin")
-            {
-                return UserRoles.Admin;
-            }
+            //if (userName == "admin")
+            //{
+            //    return UserRoles.Admin;
+            //}
 
-            return UserRoles.BasicUser;
+            //return UserRoles.BasicUser;
+
+            Role usrrole = (from user in _context.Users
+                        join userrole in _context.UserRoles on user.UserLoginId equals userrole.UserId
+                        join role in _context.Roles on userrole.RoleId equals role.RoleId
+                        where user.UserName == userName
+                        select role).FirstOrDefault();
+            if (usrrole == null)
+            {
+                return string.Empty;
+            }
+            else
+            {
+                return usrrole.Name;
+            }
         }
     }
 

@@ -1,10 +1,12 @@
 using System;
 using System.Text;
+using JwtAuthDemo.DataAccess;
 using JwtAuthDemo.Infrastructure;
 using JwtAuthDemo.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -26,6 +28,62 @@ namespace JwtAuthDemo
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddControllers();
+
+            //string connectionString = null;
+            //string envVar = Environment.GetEnvironmentVariable("DATABASE_URL");
+            //if (string.IsNullOrEmpty(envVar))
+            //{
+            //    connectionString = Configuration["Connectionstrings:database"];
+            //}
+            //else
+            //{
+            //    //parse database URL. Format is postgres://<username>:<password>@<host>/<dbname>
+            //    var uri = new Uri(envVar);
+            //    var username = uri.UserInfo.Split(':')[0];
+            //    var password = uri.UserInfo.Split(':')[1];
+            //    connectionString =
+            //    "; Database=" + uri.AbsolutePath.Substring(1) +
+            //    "; Username=" + username +
+            //    "; Password=" + password +
+            //    "; Port=" + uri.Port +
+            //    "; SSL Mode=Require; Trust Server Certificate=true;";
+            //}
+
+            //services.AddDbContext<PostgreSqlContext>(opt =>
+            //      opt.UseNpgsql(connectionString)
+            //);
+
+            services.AddEntityFrameworkNpgsql().AddDbContext<PostgreSqlContext>(options =>
+            {
+                var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+                string connStr;
+                // Depending on if in development or production, use either Heroku-provided
+                // connection string, or development connection string from env var.
+                if (env == "Development")
+                {
+                    // Use connection string from file.
+                    connStr = Configuration.GetConnectionString("ApplicationDbContext");
+                }
+                else
+                {
+                    // Use connection string provided at runtime by Heroku.
+                    var connUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+                    // Parse connection URL to connection string for Npgsql
+                    connUrl = connUrl.Replace("postgres://", string.Empty);
+                    var pgUserPass = connUrl.Split("@")[0];
+                    var pgHostPortDb = connUrl.Split("@")[1];
+                    var pgHostPort = pgHostPortDb.Split("/")[0];
+                    var pgDb = pgHostPortDb.Split("/")[1];
+                    var pgUser = pgUserPass.Split(":")[0];
+                    var pgPass = pgUserPass.Split(":")[1];
+                    var pgHost = pgHostPort.Split(":")[0];
+                    var pgPort = pgHostPort.Split(":")[1];
+                    connStr = $"Server={pgHost};Port={pgPort};User Id={pgUser};Password={pgPass};Database={pgDb}";
+                }
+                options.UseNpgsql(connStr);
+            });
+
+
 
             var jwtTokenConfig = Configuration.GetSection("jwtTokenConfig").Get<JwtTokenConfig>();
             services.AddSingleton(jwtTokenConfig);
@@ -112,6 +170,15 @@ namespace JwtAuthDemo
             {
                 endpoints.MapControllers();
             });
+            var envi = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            if (envi == "Production")
+            {
+                using (var serviceScope = app.ApplicationServices.GetRequiredService<IServiceScopeFactory>().CreateScope())
+                {
+                    var context = serviceScope.ServiceProvider.GetService<PostgreSqlContext>();
+                    context.Database.Migrate();
+                }
+            }
         }
     }
 }
